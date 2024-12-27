@@ -19,16 +19,20 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler{
 
 func (cfg *apiConfig) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	hits := cfg.fileserverHits.Load()
-	w.Header().Set("Content-type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf("Hits: %d", hits)))
+	w.Write([]byte(fmt.Sprintf("<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", hits)))
 }
 
 func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hits back to 0"))
+	_,err := w.Write([]byte("Hits back to 0"))
+	if err != nil {
+		panic(err)
+	}
+
 }
 
 func main(){
@@ -36,7 +40,7 @@ func main(){
 	apiCfg := &apiConfig{}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func( w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/healthz", func( w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		
@@ -48,9 +52,9 @@ func main(){
 	fileserver := http.FileServer(http.Dir("."))
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", fileserver)))
 
-	mux.HandleFunc("/metrics", apiCfg.handleMetrics)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.handleMetrics)
 
-	mux.HandleFunc("/reset", apiCfg.handleReset)
+	mux.HandleFunc("POST /admin/reset", apiCfg.handleReset)
 
 
 	server := &http.Server{
