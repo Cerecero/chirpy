@@ -16,20 +16,33 @@ type Request struct {
 
 type Response struct {
 	Error string `json:"error,omitempty"`
-	Valid bool   `json:"valid,omitempty"`
+	CleanedBody string `json:"cleaned_body,omitempty"`
 }
 var profaneWords = []string{"kerfuffle", "sharbert", "fornax"}
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(ChirpResponse{Error: msg})
+	json.NewEncoder(w).Encode(Response{Error: msg})
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(payload)
+}
+func replaceProfanity(input string) string {
+	words := strings.Split(input, " ")
+	for i, word := range words {
+		cleaned := strings.ToLower(word) // Convert word to lowercase for case-insensitive matching
+		for _, profane := range profaneWords {
+			if cleaned == profane {
+				words[i] = "****"
+				break
+			}
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler{
