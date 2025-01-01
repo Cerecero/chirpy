@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -8,6 +9,27 @@ import (
 
 type apiConfig struct{
 	fileserverHits atomic.Int32
+}
+type Request struct {
+	Body string `json:"body"`
+}
+
+type Response struct {
+	Error string `json:"error,omitempty"`
+	Valid bool   `json:"valid,omitempty"`
+}
+var profaneWords = []string{"kerfuffle", "sharbert", "fornax"}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(ChirpResponse{Error: msg})
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(payload)
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler{
@@ -33,6 +55,7 @@ func (cfg *apiConfig) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+
 func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
 	w.Header().Set("Content-type", "text/plain; charset=utf-8")
@@ -42,6 +65,32 @@ func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
+}
+
+func (cfg *apiConfig) handleValidateRe (w http.ResponseWriter, r *http.Request){
+	if r.Method != http.MethodPost{
+		http.Error(w, `{"error": "Method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	req := Request{}
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Response{Error: "Invalid Json"})
+		return
+	}
+
+	if len(req.Body) > 140 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Response{Error: "Chirp is too long"})
+		return
+	}	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(Response{Valid: true})
 }
 
 func main(){
@@ -65,7 +114,7 @@ func main(){
 
 	mux.HandleFunc("POST /admin/reset", apiCfg.handleReset)
 
-
+	mux.HandleFunc("POST /api/validate_chirp", apiCfg.handleValidateRe)
 	server := &http.Server{
 		Handler: mux,
 		Addr: ":8080",
