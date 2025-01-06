@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -23,18 +24,24 @@ var profaneWords = []string{"kerfuffle", "sharbert", "fornax"}
 func respondWithError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(Response{Error: msg})
+	err := json.NewEncoder(w).Encode(Response{Error: msg})
+	if err != nil{
+		panic(err)
+	}
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(payload)
+	err := json.NewEncoder(w).Encode(payload)
+	if err != nil {
+		panic(err)
+	}
 }
 func replaceProfanity(input string) string {
 	words := strings.Split(input, " ")
 	for i, word := range words {
-		cleaned := strings.ToLower(word) // Convert word to lowercase for case-insensitive matching
+		cleaned := strings.ToLower(word)
 		for _, profane := range profaneWords {
 			if cleaned == profane {
 				words[i] = "****"
@@ -80,30 +87,26 @@ func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (cfg *apiConfig) handleValidateRe (w http.ResponseWriter, r *http.Request){
+func (cfg *apiConfig) handleValidateReq (w http.ResponseWriter, r *http.Request){
 	if r.Method != http.MethodPost{
-		http.Error(w, `{"error": "Method not allowed"}`, http.StatusMethodNotAllowed)
+		respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	req := Request{}
 	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(Response{Error: "Invalid Json"})
+	if err != nil{
+		respondWithError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
 	if len(req.Body) > 140 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(Response{Error: "Chirp is too long"})
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}	
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(Response{Valid: true})
+	cleaned := replaceProfanity(req.Body)
+
+	respondWithJSON(w, http.StatusOK, Response{CleanedBody: cleaned})
 }
 
 func main(){
@@ -127,7 +130,7 @@ func main(){
 
 	mux.HandleFunc("POST /admin/reset", apiCfg.handleReset)
 
-	mux.HandleFunc("POST /api/validate_chirp", apiCfg.handleValidateRe)
+	mux.HandleFunc("POST /api/validate_chirp", apiCfg.handleValidateReq)
 	server := &http.Server{
 		Handler: mux,
 		Addr: ":8080",
