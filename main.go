@@ -1,15 +1,23 @@
 package main
-import _ "github.com/lib/pq"
+
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
-)
+	"time"
 
+	"github.com/cerecero/chirpy/internal/database"
+	"github.com/google/uuid"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+)
 type apiConfig struct{
 	fileserverHits atomic.Int32
+	dbQueries *database.Queries
 }
 type Request struct {
 	Body string `json:"body"`
@@ -18,6 +26,12 @@ type Request struct {
 type Response struct {
 	Error string `json:"error,omitempty"`
 	CleanedBody string `json:"cleaned_body,omitempty"`
+}
+type User struct {
+	ID uuid.UUID 		`json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email string 		`json:"email"`
 }
 var profaneWords = []string{"kerfuffle", "sharbert", "fornax"}
 
@@ -108,10 +122,44 @@ func (cfg *apiConfig) handleValidateReq (w http.ResponseWriter, r *http.Request)
 
 	respondWithJSON(w, http.StatusOK, Response{CleanedBody: cleaned})
 }
+func (cfg *apiConfig) handleCreateUser (w http.ResponseWriter, r *http.Request){
+
+	// req := Request{}
+	type requestBody struct {
+		Email string `json:"email"`
+	}
+	var req requestBody
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+	}
+	user, err := cfg.dbQueries.CreateUser(r.Context(), req.Email)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "error")
+	}
+
+	usr := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+	
+	respondWithJSON(w, http.StatusCreated, usr)
+
+}
 
 func main(){
+	err := godotenv.Load()
+	if err != nil {
+		panic(err)
+	}
+	dbURL := os.Getenv("DB_URL")
 
-	apiCfg := &apiConfig{}
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		panic(err)
+	}
+	dbQueries := database.New(db)
+
+	apiCfg := &apiConfig{
+		dbQueries: dbQueries,
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", func( w http.ResponseWriter, r *http.Request) {
@@ -131,11 +179,13 @@ func main(){
 	mux.HandleFunc("POST /admin/reset", apiCfg.handleReset)
 
 	mux.HandleFunc("POST /api/validate_chirp", apiCfg.handleValidateReq)
+
+	mux.HandleFunc("POST /api/users", apiCfg.handleCreateUser)
 	server := &http.Server{
 		Handler: mux,
 		Addr: ":8080",
 	}
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		panic(err)
 	}
