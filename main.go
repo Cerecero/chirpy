@@ -18,6 +18,7 @@ import (
 type apiConfig struct{
 	fileserverHits atomic.Int32
 	dbQueries *database.Queries
+	platform string
 }
 type Request struct {
 	Body string `json:"body"`
@@ -99,6 +100,18 @@ func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
+	if cfg.platform != "dev" {
+		respondWithError(w, http.StatusForbidden, "Access forbidden")
+		return
+	}
+ 	err = cfg.dbQueries.DeleteUsers(r.Context())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to reset database")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "All users deleted"})
+
 }
 
 func (cfg *apiConfig) handleValidateReq (w http.ResponseWriter, r *http.Request){
@@ -150,6 +163,7 @@ func main(){
 		panic(err)
 	}
 	dbURL := os.Getenv("DB_URL")
+	platform := os.Getenv("PLATFORM")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -159,6 +173,7 @@ func main(){
 
 	apiCfg := &apiConfig{
 		dbQueries: dbQueries,
+		platform: platform,
 	}
 
 	mux := http.NewServeMux()
@@ -181,6 +196,7 @@ func main(){
 	mux.HandleFunc("POST /api/validate_chirp", apiCfg.handleValidateReq)
 
 	mux.HandleFunc("POST /api/users", apiCfg.handleCreateUser)
+
 	server := &http.Server{
 		Handler: mux,
 		Addr: ":8080",
