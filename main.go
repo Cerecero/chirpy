@@ -52,8 +52,7 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.WriteHeader(code)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "   ")
-	err := json.NewEncoder(w).Encode(payload)
-	if err != nil {
+	if err := enc.Encode(payload); err != nil {
 		panic(err)
 	}
 }
