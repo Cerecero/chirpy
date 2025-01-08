@@ -7,15 +7,15 @@ import (
 func HashPassword(password string) (string, error){
 	hasshed, err := bcrypt.GenerateFromPassword([]byte(password), 10)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	return string(hasshed), nil
 }
 
 func CheckPasswordHash(password, hash string) error {
-	err := bcrypt.CompareHashAndPassword([]byte(password), []byte(hash)); 
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); 
 	if err != nil {
 		return err
 	}
-	return err
+	return nil
 }
