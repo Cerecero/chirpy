@@ -50,6 +50,8 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "   ")
 	err := json.NewEncoder(w).Encode(payload)
 	if err != nil {
 		panic(err)
@@ -135,8 +137,8 @@ func (cfg *apiConfig) handleChirp(w http.ResponseWriter, r *http.Request) {
 	chirpID := uuid.New()
 
 	chirp, err := cfg.dbQueries.InsertChirp(r.Context(), database.InsertChirpParams{
-		ID: chirpID,
-		Body: cleanedBody,
+		ID:     chirpID,
+		Body:   cleanedBody,
 		UserID: userID,
 	})
 	if err != nil {
@@ -167,6 +169,23 @@ func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (cfg *apiConfig) handleQueryChirps(w http.ResponseWriter, r *http.Request) {
+
+	queryChirps, err := cfg.dbQueries.QueryChirp(r.Context())
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error")
+	}
+	type Chirp struct {
+		ID        uuid.UUID
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		Body      string
+		UserID    uuid.UUID
+	}
+	// chirp := Chirp{ID: queryChirps.ID, CreatedAt: queryChirps.CreatedAt, UpdatedAt: queryChirps.UpdatedAt, Body: queryChirps.Body, UserID: queryChirps.UserID}
+
+	respondWithJSON(w, http.StatusOK, queryChirps)
+}
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -200,6 +219,8 @@ func main() {
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", fileserver)))
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handleMetrics)
+
+	mux.HandleFunc("GET /api/chirps", apiCfg.handleQueryChirps)
 
 	mux.HandleFunc("POST /admin/reset", apiCfg.handleReset)
 
