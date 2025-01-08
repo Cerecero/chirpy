@@ -7,4 +7,4 @@ CREATE TABLE chirps(id UUID PRIMARY KEY DEFAULT GEN_RANDOM_UUID(),
 );
 
 -- +goose Down 
-DROP TABLE chirp;
+DROP TABLE chirps;

@@ -1,6 +1,8 @@
 package main
 
 import (
+
+    "github.com/cerecero/chirpy/internal"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -151,13 +153,22 @@ func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	type requestBody struct {
 		Email string `json:"email"`
+		Password string `json:"password"`
 	}
 	var req requestBody
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 	}
-	user, err := cfg.dbQueries.CreateUser(r.Context(), req.Email)
+
+	hasshPass, err := auth.HashPassword(req.Password)
+	if err != nil{
+		respondWithError(w, http.StatusBadRequest, "error")
+	}
+	user, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{
+		Email: req.Email,
+		HashedPassword: sql.NullString{String: hasshPass, Valid: true},
+	})
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "error")
 	}
