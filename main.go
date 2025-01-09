@@ -212,8 +212,16 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 	usr, err := cfg.dbQueries.QueryUser(r.Context(), req.Email)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Invalid request")
+		return
 	}
-	usrHashPass
+	usrHashPass := usr.HashedPassword.String
+	err = auth.CheckPasswordHash(req.Password, usrHashPass)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid request")
+		return
+	}
+	validUsr := User{ID: usr.ID, CreatedAt: usr.CreatedAt, UpdatedAt: usr.UpdatedAt, Email: usr.Email}
+	respondWithJSON(w, http.StatusOK, validUsr)
 
 }
 func main() {

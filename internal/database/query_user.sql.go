@@ -7,42 +7,21 @@ package database
 
 import (
 	"context"
-	"database/sql"
-	"time"
-
-	"github.com/google/uuid"
 )
 
-const queryPassword = `-- name: QueryPassword :one
-SELECT hashed_password FROM users
-`
-
-func (q *Queries) QueryPassword(ctx context.Context) (sql.NullString, error) {
-	row := q.db.QueryRowContext(ctx, queryPassword)
-	var hashed_password sql.NullString
-	err := row.Scan(&hashed_password)
-	return hashed_password, err
-}
-
 const queryUser = `-- name: QueryUser :one
-SELECT id, created_at, updated_at, email FROM users WHERE email = $1
+SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
 `
 
-type QueryUserRow struct {
-	ID        uuid.UUID
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Email     string
-}
-
-func (q *Queries) QueryUser(ctx context.Context, email string) (QueryUserRow, error) {
+func (q *Queries) QueryUser(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRowContext(ctx, queryUser, email)
-	var i QueryUserRow
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
+		&i.HashedPassword,
 	)
 	return i, err
 }
