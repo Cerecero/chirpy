@@ -224,6 +224,7 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, validUsr)
 
 }
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {

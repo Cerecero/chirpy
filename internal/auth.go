@@ -19,3 +19,7 @@ func CheckPasswordHash(password, hash string) error {
 	}
 	return nil
 }
+
+func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration,) (string, error){
+
+}
