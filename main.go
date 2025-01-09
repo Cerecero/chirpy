@@ -196,6 +196,26 @@ func (cfg *apiConfig) handleQueryChirps(w http.ResponseWriter, r *http.Request) 
 
 	respondWithJSON(w, http.StatusOK, queryChirps)
 }
+
+
+func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
+	type requestBody struct {
+		Password string `json:"password"`
+		Email string `json:"email"`
+	}
+
+	var req requestBody
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+	}
+	usr, err := cfg.dbQueries.QueryUser(r.Context(), req.Email)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid request")
+	}
+	usrHashPass
+
+}
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -237,6 +257,8 @@ func main() {
 	mux.HandleFunc("/api/chirps", apiCfg.handleChirp)
 
 	mux.HandleFunc("POST /api/users", apiCfg.handleCreateUser)
+
+	mux.HandleFunc("POST /api/login", apiCfg.handleLogin)
 
 	server := &http.Server{
 		Handler: mux,
