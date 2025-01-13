@@ -1,8 +1,6 @@
 package main
 
 import (
-
-    "github.com/cerecero/chirpy/internal"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -11,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	auth "github.com/cerecero/chirpy/internal"
 
 	"github.com/cerecero/chirpy/internal/database"
 	"github.com/google/uuid"
@@ -22,6 +22,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries      *database.Queries
 	platform       string
+	jwtSecret      string
 }
 type Request struct {
 	Body string `json:"body"`
@@ -116,8 +117,18 @@ func (cfg *apiConfig) handleChirp(w http.ResponseWriter, r *http.Request) {
 		Body   string `json:"body"`
 		UserID string `json:"user_id"`
 	}
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "missing or invalid token")
+		return
+	}
+	userID, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "invalid token")
+	}
+
 	var req requestBody
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err = json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 	}
@@ -129,7 +140,7 @@ func (cfg *apiConfig) handleChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-	userID, err := uuid.Parse(req.UserID)
+	userID, err = uuid.Parse(req.UserID)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid user_id fromat")
 		return
@@ -152,7 +163,7 @@ func (cfg *apiConfig) handleChirp(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	type requestBody struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 	var req requestBody
@@ -162,11 +173,11 @@ func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasshPass, err := auth.HashPassword(req.Password)
-	if err != nil{
+	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "error")
 	}
 	user, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{
-		Email: req.Email,
+		Email:          req.Email,
 		HashedPassword: sql.NullString{String: hasshPass, Valid: true},
 	})
 	if err != nil {
@@ -197,14 +208,21 @@ func (cfg *apiConfig) handleQueryChirps(w http.ResponseWriter, r *http.Request) 
 	respondWithJSON(w, http.StatusOK, queryChirps)
 }
 
-
 func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
-	type requestBody struct {
-		Password string `json:"password"`
-		Email string `json:"email"`
+	type loginRequest struct {
+		Password         string `json:"password"`
+		Email            string `json:"email"`
 	}
 
-	var req requestBody
+	type loginResponse struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string `json:"email"`
+		Token     string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	var req loginRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
@@ -220,8 +238,28 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusUnauthorized, "Invalid request")
 		return
 	}
-	validUsr := User{ID: usr.ID, CreatedAt: usr.CreatedAt, UpdatedAt: usr.UpdatedAt, Email: usr.Email}
-	respondWithJSON(w, http.StatusOK, validUsr)
+
+	token, err := auth.MakeJWT(usr.ID, cfg.jwtSecret, time.Hour)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to generate token")
+		return
+	}
+
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create refresh token")
+		return
+	}
+
+	resp := loginResponse{
+		ID: usr.ID,
+		CreatedAt: usr.CreatedAt,
+		UpdatedAt: usr.UpdatedAt,
+		Email: usr.Email,
+		Token: token,
+		RefreshToken: refreshToken,
+	}
+	respondWithJSON(w, http.StatusOK, resp)
 
 }
 
@@ -232,6 +270,7 @@ func main() {
 	}
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
+	jwtSecret := os.Getenv("JWT_SECRET")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -242,6 +281,7 @@ func main() {
 	apiCfg := &apiConfig{
 		dbQueries: dbQueries,
 		platform:  platform,
+		jwtSecret: jwtSecret,
 	}
 
 	mux := http.NewServeMux()
