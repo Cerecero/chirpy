@@ -196,14 +196,6 @@ func (cfg *apiConfig) handleQueryChirps(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Error")
 	}
-	type Chirp struct {
-		ID        uuid.UUID
-		CreatedAt time.Time
-		UpdatedAt time.Time
-		Body      string
-		UserID    uuid.UUID
-	}
-	// chirp := Chirp{ID: queryChirps.ID, CreatedAt: queryChirps.CreatedAt, UpdatedAt: queryChirps.UpdatedAt, Body: queryChirps.Body, UserID: queryChirps.UserID}
 
 	respondWithJSON(w, http.StatusOK, queryChirps)
 }
@@ -250,6 +242,15 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to create refresh token")
 		return
 	}
+	expiresAt := time.Now().Add(60 * 24 * time.Hour)
+	_, err = cfg.dbQueries.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		Token: refreshToken,
+		UserID: usr.ID,
+		ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to save refresh token")
+	}
 
 	resp := loginResponse{
 		ID: usr.ID,
@@ -263,6 +264,26 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (cfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "missing or invalid authorization header")
+		return
+	}
+	query, err := cfg.dbQueries.QueryRefreshToken(r.Context(), tokenString)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "invalid or expired refresh token")
+		return
+	}
+	accessToken, err := auth.MakeJWT(query.UserID, cfg.jwtSecret, time.Hour)
+	if err != nil{
+		respondWithError(w, http.StatusInternalServerError, "failed to create access token")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, map[string]string{"token": accessToken})
+
+
+}
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -308,6 +329,10 @@ func main() {
 	mux.HandleFunc("POST /api/users", apiCfg.handleCreateUser)
 
 	mux.HandleFunc("POST /api/login", apiCfg.handleLogin)
+
+	mux.HandleFunc("POST /api/refresh", apiCfg.handleRefresh)
+	
+	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
 
 	server := &http.Server{
 		Handler: mux,
