@@ -8,3 +8,6 @@ VALUES (
     NOW()
 )
 RETURNING *;
+
+-- name: DeleteChirp :exec
+DELETE FROM chirps WHERE id = $1;

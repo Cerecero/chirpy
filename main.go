@@ -125,12 +125,14 @@ func (cfg *apiConfig) handleChirp(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "invalid token")
+		return
 	}
 
 	var req requestBody
 	err = json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 	if req.Body == "" || req.UserID == "" {
 		respondWithError(w, http.StatusBadRequest, "Both body and user_id are required")
@@ -340,6 +342,51 @@ func (cfg *apiConfig) handleUpdateChirp(w http.ResponseWriter, r *http.Request) 
 	}
 	respondWithJSON(w, http.StatusCreated, user)
 }
+
+func (cfg *apiConfig) handleDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		respondWithError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	chirpID := strings.TrimPrefix(r.URL.Path, "/api/chirps/")
+	if chirpID == ""{
+		respondWithError(w, http.StatusBadRequest, "Chirp ID is requried")
+		return
+	}
+	id, err := uuid.Parse(chirpID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid chirp id")
+		return
+	}
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "missing or invalid authorization header")
+	}
+
+	userID, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
+
+	query, err := cfg.dbQueries.QueryAuthorUser(r.Context(), id)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "chirp not found")
+		return
+	}
+
+	if userID != query{
+		respondWithError(w, http.StatusForbidden, "you are not authorized")
+		return
+	}
+
+	deleteQuery := cfg.dbQueries.DeleteChirp(r.Context(), id)
+	if deleteQuery != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to delete chirp")
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -391,6 +438,8 @@ func main() {
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
 
 	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdateChirp)
+
+	mux.HandleFunc("DELETE /api/chirps/", apiCfg.handleDeleteChirp)
 
 	server := &http.Server{
 		Handler: mux,

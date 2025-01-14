@@ -13,6 +13,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const queryAuthorUser = `-- name: QueryAuthorUser :one
+SELECT user_id FROM chirps WHERE id = $1
+`
+
+func (q *Queries) QueryAuthorUser(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, queryAuthorUser, id)
+	var user_id uuid.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const queryUser = `-- name: QueryUser :one
 SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
 `

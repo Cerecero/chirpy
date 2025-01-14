@@ -3,3 +3,6 @@ SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email
 
 -- name: UpdateUser :one
 UPDATE users SET email = $1, hashed_password = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING id, created_at, updated_at, email;
+
+-- name: QueryAuthorUser :one
+SELECT user_id FROM chirps WHERE id = $1;
