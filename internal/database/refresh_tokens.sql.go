@@ -59,3 +59,17 @@ func (q *Queries) QueryRefreshToken(ctx context.Context, token string) (QueryRef
 	err := row.Scan(&i.UserID, &i.ExpiresAt, &i.RevokedAt)
 	return i, err
 }
+
+const updateRefreshToken = `-- name: UpdateRefreshToken :exec
+UPDATE refresh_tokens SET revoked_at = $1, updated_at = $1 WHERE token = $2
+`
+
+type UpdateRefreshTokenParams struct {
+	RevokedAt sql.NullTime
+	Token     string
+}
+
+func (q *Queries) UpdateRefreshToken(ctx context.Context, arg UpdateRefreshTokenParams) error {
+	_, err := q.db.ExecContext(ctx, updateRefreshToken, arg.RevokedAt, arg.Token)
+	return err
+}

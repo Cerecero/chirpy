@@ -284,6 +284,60 @@ func (cfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 
 }
+func (cfg *apiConfig) handleRevoke(w http.ResponseWriter, r *http.Request) {
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "missing or invalid authorization header")
+		return
+	}
+	err = cfg.dbQueries.UpdateRefreshToken(r.Context(), database.UpdateRefreshTokenParams{
+		RevokedAt: sql.NullTime{Time: time.Now(), Valid: true},
+		Token: tokenString,
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (cfg *apiConfig) handleUpdateChirp(w http.ResponseWriter, r *http.Request) {
+	type requestBody struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "missing or invalid authorization header")
+		return
+	}
+	userID, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
+
+	var req requestBody
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+	}
+
+	hasshPass, err := auth.HashPassword(req.Password)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "error")
+	}
+	user, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{
+		Email:          req.Email,
+		HashedPassword: sql.NullString{String: hasshPass, Valid: true},
+	})
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "error")
+	}
+
+	usr := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+
+	respondWithJSON(w, http.StatusCreated, usr)
+}
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -333,6 +387,8 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", apiCfg.handleRefresh)
 	
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
+
+	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdateChirp)
 
 	server := &http.Server{
 		Handler: mux,
