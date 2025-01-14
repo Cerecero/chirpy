@@ -321,22 +321,24 @@ func (cfg *apiConfig) handleUpdateChirp(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 	}
-
+	if req.Email == "" || req.Password == ""{
+		respondWithError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
 	hasshPass, err := auth.HashPassword(req.Password)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "error")
 	}
-	user, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{
+	//UPDATE USER
+	user, err := cfg.dbQueries.UpdateUser(r.Context(), database.UpdateUserParams{
 		Email:          req.Email,
 		HashedPassword: sql.NullString{String: hasshPass, Valid: true},
+		ID: userID,
 	})
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "error")
 	}
-
-	usr := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
-
-	respondWithJSON(w, http.StatusCreated, usr)
+	respondWithJSON(w, http.StatusCreated, user)
 }
 func main() {
 	err := godotenv.Load()
