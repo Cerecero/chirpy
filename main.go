@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -33,10 +34,11 @@ type Response struct {
 	CleanedBody string `json:"cleaned_body,omitempty"`
 }
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
+	ID          uuid.UUID `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Email       string    `json:"email"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
 }
 
 var profaneWords = []string{"kerfuffle", "sharbert", "fornax"}
@@ -204,17 +206,17 @@ func (cfg *apiConfig) handleQueryChirps(w http.ResponseWriter, r *http.Request) 
 
 func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 	type loginRequest struct {
-		Password         string `json:"password"`
-		Email            string `json:"email"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 
 	type loginResponse struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string `json:"email"`
-		Token     string `json:"token"`
-		RefreshToken string `json:"refresh_token"`
+		ID           uuid.UUID `json:"id"`
+		CreatedAt    time.Time `json:"created_at"`
+		UpdatedAt    time.Time `json:"updated_at"`
+		Email        string    `json:"email"`
+		Token        string    `json:"token"`
+		RefreshToken string    `json:"refresh_token"`
 	}
 	var req loginRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -246,8 +248,8 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	expiresAt := time.Now().Add(60 * 24 * time.Hour)
 	_, err = cfg.dbQueries.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
-		Token: refreshToken,
-		UserID: usr.ID,
+		Token:     refreshToken,
+		UserID:    usr.ID,
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {
@@ -255,11 +257,11 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := loginResponse{
-		ID: usr.ID,
-		CreatedAt: usr.CreatedAt,
-		UpdatedAt: usr.UpdatedAt,
-		Email: usr.Email,
-		Token: token,
+		ID:           usr.ID,
+		CreatedAt:    usr.CreatedAt,
+		UpdatedAt:    usr.UpdatedAt,
+		Email:        usr.Email,
+		Token:        token,
 		RefreshToken: refreshToken,
 	}
 	respondWithJSON(w, http.StatusOK, resp)
@@ -278,12 +280,11 @@ func (cfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accessToken, err := auth.MakeJWT(query.UserID, cfg.jwtSecret, time.Hour)
-	if err != nil{
+	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "failed to create access token")
 		return
 	}
 	respondWithJSON(w, http.StatusOK, map[string]string{"token": accessToken})
-
 
 }
 func (cfg *apiConfig) handleRevoke(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +295,7 @@ func (cfg *apiConfig) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 	err = cfg.dbQueries.UpdateRefreshToken(r.Context(), database.UpdateRefreshTokenParams{
 		RevokedAt: sql.NullTime{Time: time.Now(), Valid: true},
-		Token: tokenString,
+		Token:     tokenString,
 	})
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error")
@@ -323,7 +324,7 @@ func (cfg *apiConfig) handleUpdateChirp(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 	}
-	if req.Email == "" || req.Password == ""{
+	if req.Email == "" || req.Password == "" {
 		respondWithError(w, http.StatusBadRequest, "email and password are required")
 		return
 	}
@@ -335,7 +336,7 @@ func (cfg *apiConfig) handleUpdateChirp(w http.ResponseWriter, r *http.Request) 
 	user, err := cfg.dbQueries.UpdateUser(r.Context(), database.UpdateUserParams{
 		Email:          req.Email,
 		HashedPassword: sql.NullString{String: hasshPass, Valid: true},
-		ID: userID,
+		ID:             userID,
 	})
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "error")
@@ -350,7 +351,7 @@ func (cfg *apiConfig) handleDeleteChirp(w http.ResponseWriter, r *http.Request) 
 	}
 
 	chirpID := strings.TrimPrefix(r.URL.Path, "/api/chirps/")
-	if chirpID == ""{
+	if chirpID == "" {
 		respondWithError(w, http.StatusBadRequest, "Chirp ID is requried")
 		return
 	}
@@ -376,7 +377,7 @@ func (cfg *apiConfig) handleDeleteChirp(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if userID != query{
+	if userID != query {
 		respondWithError(w, http.StatusForbidden, "you are not authorized")
 		return
 	}
@@ -386,6 +387,46 @@ func (cfg *apiConfig) handleDeleteChirp(w http.ResponseWriter, r *http.Request) 
 		respondWithError(w, http.StatusInternalServerError, "failed to delete chirp")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (cfg *apiConfig) handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondWithError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	type webhook struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+	var whook webhook
+	err := json.NewDecoder(r.Body).Decode(&whook)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if whook.Event != "user.upgraded" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	userID, err := uuid.Parse(whook.Data.UserID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
+	err = cfg.dbQueries.QueryUpgradeUser(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondWithError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "failed to upgarde user")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
 }
 func main() {
 	err := godotenv.Load()
@@ -434,13 +475,14 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiCfg.handleLogin)
 
 	mux.HandleFunc("POST /api/refresh", apiCfg.handleRefresh)
-	
+
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
 
 	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdateChirp)
 
 	mux.HandleFunc("DELETE /api/chirps/", apiCfg.handleDeleteChirp)
 
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handleUpgrade)
 	server := &http.Server{
 		Handler: mux,
 		Addr:    ":8080",

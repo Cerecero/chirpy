@@ -24,8 +24,17 @@ func (q *Queries) QueryAuthorUser(ctx context.Context, id uuid.UUID) (uuid.UUID,
 	return user_id, err
 }
 
+const queryUpgradeUser = `-- name: QueryUpgradeUser :exec
+UPDATE users SET is_chirpy_red = TRUE WHERE id = $1
+`
+
+func (q *Queries) QueryUpgradeUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, queryUpgradeUser, id)
+	return err
+}
+
 const queryUser = `-- name: QueryUser :one
-SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users WHERE email = $1
 `
 
 func (q *Queries) QueryUser(ctx context.Context, email string) (User, error) {
@@ -37,6 +46,7 @@ func (q *Queries) QueryUser(ctx context.Context, email string) (User, error) {
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
