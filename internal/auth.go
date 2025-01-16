@@ -104,6 +104,5 @@ func GetAPIKey(headers http.Header) (string, error){
 	if len(key) != 2 || strings.ToLower(key[0]) != "apikey"{
 		return "", errors.New("invalid authorization header format")
 	}
-	fmt.Printf("Key: %s", key[1])
 	return key[1], nil
 }
