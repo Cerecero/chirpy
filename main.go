@@ -196,12 +196,24 @@ func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) handleQueryChirps(w http.ResponseWriter, r *http.Request) {
-
-	queryChirps, err := cfg.dbQueries.QueryChirp(r.Context())
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Error")
+	authorID := r.URL.Query().Get("author_id")
+	if authorID == ""{
+		queryChirps, err := cfg.dbQueries.QueryChirp(r.Context())
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Error")
+		}
+		respondWithJSON(w, http.StatusOK, queryChirps)
+		return
 	}
-
+	userID, err := uuid.Parse(authorID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid user id")
+	}
+	queryChirps, err := cfg.dbQueries.QueryChirpById(r.Context(), userID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid chirp id")
+		return
+	}
 	respondWithJSON(w, http.StatusOK, queryChirps)
 }
 
