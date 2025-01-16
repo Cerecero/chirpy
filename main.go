@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -197,10 +198,18 @@ func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) handleQueryChirps(w http.ResponseWriter, r *http.Request) {
 	authorID := r.URL.Query().Get("author_id")
+	sortOrd := r.URL.Query().Get("sort")
 	if authorID == ""{
 		queryChirps, err := cfg.dbQueries.QueryChirp(r.Context())
 		if err != nil {
 			respondWithError(w, http.StatusBadRequest, "Error")
+		}
+		if sortOrd == "desc"{
+			sort.Slice(queryChirps, func(i, j int)bool{
+				return queryChirps[i].CreatedAt.After(queryChirps[j].CreatedAt)
+			})
+			respondWithJSON(w, http.StatusOK, queryChirps)
+			return
 		}
 		respondWithJSON(w, http.StatusOK, queryChirps)
 		return
