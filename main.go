@@ -24,6 +24,7 @@ type apiConfig struct {
 	dbQueries      *database.Queries
 	platform       string
 	jwtSecret      string
+	polkaKey       string
 }
 type Request struct {
 	Body string `json:"body"`
@@ -394,6 +395,15 @@ func (cfg *apiConfig) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to get header")
+		return
+	}
+	if apiKey != cfg.polkaKey{
+		respondWithError(w, http.StatusUnauthorized, "api key is not valid")
+		return
+	}
 	type webhook struct {
 		Event string `json:"event"`
 		Data  struct {
@@ -401,7 +411,7 @@ func (cfg *apiConfig) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		} `json:"data"`
 	}
 	var whook webhook
-	err := json.NewDecoder(r.Body).Decode(&whook)
+	err = json.NewDecoder(r.Body).Decode(&whook)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -436,6 +446,7 @@ func main() {
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
 	jwtSecret := os.Getenv("JWT_SECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -447,6 +458,7 @@ func main() {
 		dbQueries: dbQueries,
 		platform:  platform,
 		jwtSecret: jwtSecret,
+		polkaKey: polkaKey,
 	}
 
 	mux := http.NewServeMux()

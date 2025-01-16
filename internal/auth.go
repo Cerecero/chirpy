@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -92,4 +93,17 @@ func MakeRefreshToken() (string, error){
 	}
 	return hex.EncodeToString(nums), nil
 
+}
+
+func GetAPIKey(headers http.Header) (string, error){
+	apiHeader := headers.Get("Authorization")
+	if apiHeader == ""{
+		return "", errors.New("authorization header missing")
+	}
+	key := strings.Split(apiHeader, " ")
+	if len(key) != 2 || strings.ToLower(key[0]) != "apikey"{
+		return "", errors.New("invalid authorization header format")
+	}
+	fmt.Printf("Key: %s", key[1])
+	return key[1], nil
 }
